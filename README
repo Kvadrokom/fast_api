@@ -1,0 +1,16 @@
+pip freeze > requirements.txt
+pip install -r requirements.txt
+uvicorn main:app --reload
+
+if __name__ == "__main__":
+    uvicorn.run(app, host="0.0.0.0", port=8002)
+
+create table stepic_api.todos(id int primary key GENERATED ALWAYS AS identity, title text,
+description text, completed bool) #by default as identity
+
+Изменить тип колонки
+ALTER TABLE table_name ALTER COLUMN column_name TYPE new_data_type;
+
+pip install alembic asyncpg sqlalchemy pydantic-settings
+asyncpg: это асинхронный драйвер для PostgreSQL, который позволяет использовать возможности асинхронного программирования с SQLAlchemy.
+pydantic-settings: это отдельная библиотека, которую мы будем использовать для хранения настроек.
