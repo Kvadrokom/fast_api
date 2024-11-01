@@ -1,59 +1,49 @@
-import psycopg2
-from fastapi import FastAPI
-from psycopg2.extras import DictCursor
-
-from models import Todo
+from fastapi import FastAPI, HTTPException
+from databases import Database
+from models import UserReturn, UserCreate
+from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI()
 
+# URL для PostgreSQL (измените его под свою БД)
+DATABASE_URL = "postgresql://postgres@192.168.1.78/api"
 
-def get_connection():
-    connection = psycopg2.connect(dbname='api', user='postgres',
-                        password=None, host='192.168.1.78')
-    return connection
+database = Database(DATABASE_URL)
 
-
-@app.post('/todos')
-async def create_todo(data: Todo):
-    conn = get_connection()
-    c = conn.cursor(cursor_factory=DictCursor)
-    c.execute('insert into stepic_api.todos(title, description, completed) values (%s, %s, %s)',
-              (data.title, data.description, data.complited))
-    conn.commit()
-    c.execute('select * from stepic_api.todos where title = %s', (data.title, ))
-    result = c.fetchone()
-    c.close()
-    conn.close()
-    return {'id': result[0], 'title': result[1], 'description': result[2], 'complited': result[3]}
+# тут устанавливаем условия подключения к базе данных и отключения - можно использовать в роутах контекстный менеджер async with Database(...) as db: etc
+@app.on_event("startup")
+async def startup_database():
+    await database.connect()
 
 
-@app.get('/todos/{data_id}')
-async def get_item(data_id: int):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('select * from stepic_api.todos where id = %s', (data_id,))
-    result = c.fetchone()
-    c.close()
-    conn.close()
-    return {'id': result[0], 'title': result[1], 'description': result[2], 'complited': result[3]}
+@app.on_event("shutdown")
+async def shutdown_database():
+    await database.disconnect()
 
 
-@app.put('/todos/update')
-async def update_item(data: Todo):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('update stepic_api.todos set title = %s, description = %s, completed = %s',
-              (data.title, data.description, data.complited))
-    c.close()
-    conn.close()
-    return "Item update"
+# создание роута для создания юзеров
+@app.post("/users/", response_model=UserReturn)
+async def create_user(user: UserCreate):
+    query = "INSERT INTO stepic_api.users (username, email) VALUES (:username, :email) RETURNING id"
+    values = {"username": user.username, "email": user.email}
+    try:
+        user_id = await database.execute(query=query, values=values)
+        return {**user.dict(), "id": user_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to create user")
 
 
-@app.delete('/todos/delete/{item_id}')
-async def delete_item(item_id: int):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('delete from stepic_api.todos where id = %s', (item_id,))
-    c.close()
-    conn.close()
-    return "Item deleted"
+@app.get("/user/{user_id}", response_model=UserReturn)
+async def get_user(user_id: int):
+    query = "SELECT * FROM stepic_api.users WHERE id = :user_id"
+    values = {"user_id": user_id}
+    try:
+        result = await database.fetch_one(query=query, values=values)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to fetch user from database")
+    if result:
+        return UserReturn(username=result["username"], email=result["email"], id=user_id)
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
+
