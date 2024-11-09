@@ -1,59 +1,77 @@
-import psycopg2
-from fastapi import FastAPI
-from psycopg2.extras import DictCursor
-
-from models import Todo
+from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import JSONResponse
+from databases import Database
+from models import TodoCreate, TodoReturn, TodoUpdate, Todo
 
 app = FastAPI()
 
+# URL для PostgreSQL (измените его под свою БД)
+DATABASE_URL = "postgresql://postgres@192.168.1.78/api"
 
-def get_connection():
-    connection = psycopg2.connect(dbname='api', user='postgres',
-                        password=None, host='192.168.1.78')
-    return connection
+database = Database(DATABASE_URL)
 
-
-@app.post('/todos')
-async def create_todo(data: Todo):
-    conn = get_connection()
-    c = conn.cursor(cursor_factory=DictCursor)
-    c.execute('insert into stepic_api.todos(title, description, completed) values (%s, %s, %s)',
-              (data.title, data.description, data.complited))
-    conn.commit()
-    c.execute('select * from stepic_api.todos where title = %s', (data.title, ))
-    result = c.fetchone()
-    c.close()
-    conn.close()
-    return {'id': result[0], 'title': result[1], 'description': result[2], 'complited': result[3]}
+# тут устанавливаем условия подключения к базе данных и отключения - можно использовать в роутах контекстный менеджер async with Database(...) as db: etc
+@app.on_event("startup")
+async def startup_database():
+    await database.connect()
 
 
-@app.get('/todos/{data_id}')
-async def get_item(data_id: int):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('select * from stepic_api.todos where id = %s', (data_id,))
-    result = c.fetchone()
-    c.close()
-    conn.close()
-    return {'id': result[0], 'title': result[1], 'description': result[2], 'complited': result[3]}
+@app.on_event("shutdown")
+async def shutdown_database():
+    await database.disconnect()
 
 
-@app.put('/todos/update')
-async def update_item(data: Todo):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('update stepic_api.todos set title = %s, description = %s, completed = %s',
-              (data.title, data.description, data.complited))
-    c.close()
-    conn.close()
-    return "Item update"
+# создание роута для создания item_todo
+@app.post("/todos", response_model=Todo)
+async def create_item(item: TodoCreate):
+    query = "INSERT INTO stepic_api.todos (title, description, completed) VALUES (:title, \
+            :description, :completed) RETURNING id"
+    values = {"title": item.title, "description": item.description, "completed": False}
+    try:
+        item_id = await database.execute(query=query, values=values)
+        return {**item.dict(), "id": item_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to create user")
 
 
-@app.delete('/todos/delete/{item_id}')
-async def delete_item(item_id: int):
-    conn = get_connection()
-    c = conn.cursor()
-    c.execute('delete from stepic_api.todos where id = %s', (item_id,))
-    c.close()
-    conn.close()
-    return "Item deleted"
+@app.get("/todos/{item_id}", response_model=TodoReturn)
+async def get_user(item_id: int):
+    query = "SELECT * FROM stepic_api.todos WHERE id = :item_id"
+    values = {"item_id": item_id}
+    try:
+        result = await database.fetch_one(query=query, values=values)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to fetch todo_item from database")
+    if result:
+        return TodoReturn(username=result["title"], email=result["description"], id=item_id)
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
+
+@app.put("/todos/{item_id}")
+async def update_user(item_id: int, todo: TodoUpdate):
+    values = todo.model_dump(exclude_unset=True)
+    query_dynamic_part = ", ".join([f"{key} = :{key}" for key in values.keys()])
+    query = f"UPDATE stepic_api.todos SET {query_dynamic_part} WHERE id = :item_id;"
+    if not values:
+        return {"message": "Empty data - nothing to update"}
+    values["item_id"] = item_id
+    try:
+        await database.execute(query=query, values=values)
+        print("hi")
+        return JSONResponse(content="", status_code=status.HTTP_204_NO_CONTENT)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to update user in database")
+
+
+@app.delete("/todos/{item_id}", response_model=dict)
+async def delete_user(item_id: int):
+    query = "DELETE FROM stepic_api.todos WHERE id = :item_id RETURNING id"
+    values = {"item_id": item_id}
+    try:
+        deleted_rows = await database.execute(query=query, values=values)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Failed to delete user from database")
+    if deleted_rows:
+        return {"message": "Item  deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
