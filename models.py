@@ -15,8 +15,8 @@ class Todo(BaseModel):
 
 # Модель User для валидации входных данных
 class UserCreate(BaseModel):
-    username: str
-    email: str
+    username: str | None
+    email: str | None
 
 
 # Модель User для валидации исходящих данных - чисто для демонстрации (обычно входная модель шире чем выходная, т.к. на вход мы просим, например, пароль, который обратно не возвращаем, и другое, что не обязательно возвращать)
@@ -25,3 +25,7 @@ class UserReturn(BaseModel):
     email: str
     id: Optional[int] = None
 
+
+class UserUpdate(BaseModel):
+    username: Optional[str] = None
+    email: Optional[str] = None
