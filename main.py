@@ -43,7 +43,8 @@ async def get_user(item_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to fetch todo_item from database")
     if result:
-        return TodoReturn(username=result["title"], email=result["description"], id=item_id)
+        return TodoReturn(username=result["title"], email=result["description"],
+                          completed=result["completed"])
     else:
         raise HTTPException(status_code=404, detail="User not found")
 
