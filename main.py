@@ -43,10 +43,12 @@ async def get_user(item_id: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Failed to fetch todo_item from database")
     if result:
-        return TodoReturn(username=result["title"], email=result["description"],
+        print(result)
+        return TodoReturn(title=result["title"], description=result["description"],
                           completed=result["completed"])
     else:
         raise HTTPException(status_code=404, detail="User not found")
+
 
 @app.put("/todos/{item_id}")
 async def update_user(item_id: int, todo: TodoUpdate):
@@ -58,9 +60,8 @@ async def update_user(item_id: int, todo: TodoUpdate):
     values["item_id"] = item_id
     try:
         await database.execute(query=query, values=values)
-        print("hi")
-        return JSONResponse(content="", status_code=status.HTTP_204_NO_CONTENT)
-    except Exception as e:
+        return {**values}
+    except Exception:
         raise HTTPException(status_code=500, detail="Failed to update user in database")
 
 
